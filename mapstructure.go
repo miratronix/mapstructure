@@ -847,21 +847,22 @@ func (d *Decoder) decodeMapFromStruct(name string, dataVal reflect.Value, val re
 		// Determine the name of the key in the map
 		if index := strings.Index(tagValue, ","); index != -1 {
 			if tagValue[:index] == "-" {
-				continue;
+				continue
 			}
 			// If "omitempty" is specified in the tag, it ignores empty values.
-			if strings.Index(tagValue[index + 1:], "omitempty") != -1 && isEmptyValue(v) {
+			if strings.Index(tagValue[index+1:], "omitempty") != -1 && isEmptyValue(v) {
 				continue
 			}
 
 			// If "squash" is specified in the tag, we squash the field down.
-			squash = !squash && strings.Index(tagValue[index + 1:], "squash") != -1
+			squash = !squash && strings.Index(tagValue[index+1:], "squash") != -1
 			if squash && v.Kind() != reflect.Struct {
 				return fmt.Errorf("cannot squash non-struct type '%s'", v.Type())
 			}
 			keyName = tagValue[:index]
+
 		} else if len(tagValue) > 0 {
-			if  tagValue == "-" {
+			if tagValue == "-" {
 				continue
 			}
 			keyName = tagValue
@@ -1187,7 +1188,7 @@ func (d *Decoder) decodeStructFromMap(name string, dataVal, val reflect.Value) e
 			fieldKind := fieldType.Type.Kind()
 
 			// If "squash" is specified in the tag, we squash the field down.
-			squash := d.config.Squash && fieldKind == reflect.Struct && fieldType.Anonymous
+			squash := d.config.Squash && (fieldKind == reflect.Struct || fieldKind == reflect.Ptr) && fieldType.Anonymous
 			remain := false
 
 			// We always parse the tags cause we're looking for other tags too
@@ -1205,13 +1206,41 @@ func (d *Decoder) decodeStructFromMap(name string, dataVal, val reflect.Value) e
 			}
 
 			if squash {
-				if fieldKind != reflect.Struct {
+				if fieldKind == reflect.Struct {
+					structs = append(structs, structVal.FieldByName(fieldType.Name))
+
+				} else if fieldKind == reflect.Ptr {
+					ptrElement := fieldType.Type.Elem()
+
+					// Check that it's a pointer to a struct
+					ptrKind := ptrElement.Kind()
+					if ptrKind != reflect.Struct {
+						errors = appendErrors(errors,
+							fmt.Errorf("%s: unsupported type for squashed pointer: %s", fieldType.Name, ptrKind))
+						continue
+					}
+
+					// Initialize the nested structure, if you're squashing, the result should never be nil
+					ptrField := structVal.FieldByName(fieldType.Name)
+					if ptrField.IsNil() {
+
+						// Make sure it's valid and can be set
+						if !ptrField.IsValid() || ptrField.CanSet() {
+							continue
+						}
+
+						// Set it to a new instance
+						ptrField.Set(reflect.New(fieldType.Type.Elem()))
+					}
+
+					// And append the dereferenced pointer
+					structs = append(structs, ptrField.Elem())
+
+				} else {
 					errors = appendErrors(errors,
 						fmt.Errorf("%s: unsupported type for squash: %s", fieldType.Name, fieldKind))
-				} else {
-					structs = append(structs, structVal.FieldByName(fieldType.Name))
+					continue
 				}
-				continue
 			}
 
 			// Build our field
@@ -1281,6 +1310,7 @@ func (d *Decoder) decodeStructFromMap(name string, dataVal, val reflect.Value) e
 			fieldName = fmt.Sprintf("%s.%s", name, fieldName)
 		}
 
+		// Decoding
 		if err := d.decode(fieldName, rawMapVal.Interface(), fieldValue); err != nil {
 			errors = appendErrors(errors, err)
 		}
