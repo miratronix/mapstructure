@@ -1310,7 +1310,6 @@ func (d *Decoder) decodeStructFromMap(name string, dataVal, val reflect.Value) e
 			fieldName = fmt.Sprintf("%s.%s", name, fieldName)
 		}
 
-		// Decoding
 		if err := d.decode(fieldName, rawMapVal.Interface(), fieldValue); err != nil {
 			errors = appendErrors(errors, err)
 		}
