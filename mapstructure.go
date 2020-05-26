@@ -1225,7 +1225,7 @@ func (d *Decoder) decodeStructFromMap(name string, dataVal, val reflect.Value) e
 					if ptrField.IsNil() {
 
 						// Make sure it's valid and can be set
-						if !ptrField.IsValid() || ptrField.CanSet() {
+						if !ptrField.IsValid() || !ptrField.CanSet() {
 							continue
 						}
 
